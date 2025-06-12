@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - API Key Manager{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h2>API Keys</h2>
+            
+            <!-- API Key Creation Form -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form action="{{ url_for('dashboard') }}" method="POST">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="mb-3">
+                                    <label for="key_name" class="form-label">Key Name</label>
+                                    <input type="text" class="form-control" id="key_name" name="key_name" required>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="alert alert-info h-100 d-flex align-items-center">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    <div>
+                                        Payment of <strong>$30.00</strong> is required to generate an API key.
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="fas fa-plus me-2"></i> Generate API Key
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- API Keys Table -->
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Key Name</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th>Expires</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for key in current_user.api_keys %}
+                                <tr>
+                                    <td>
+                                        {{ key.key_name }}
+                                        {% if key.status == 'expired' %}
+                                            <span class="text-danger ms-2">
+                                                <i class="fas fa-exclamation-circle"></i> Expired
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if key.status == 'active' %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% elif key.status == 'expired' %}
+                                        <span class="badge bg-danger">Expired</span>
+                                        {% else %}
+                                        <span class="badge bg-warning">{{ key.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ key.creation_date.strftime('%Y-%m-%d') }}</td>
+                                    <td>
+                                        {{ key.expiry_date.strftime('%Y-%m-%d') }}
+                                        {% if key.status == 'expired' %}
+                                            <span class="text-danger ms-2">
+                                                <i class="fas fa-clock"></i> Expired {{ ((datetime.now(timezone.utc) - key.expiry_date).days if key.expiry_date.tzinfo else (datetime.now(timezone.utc) - key.expiry_date.replace(tzinfo=timezone.utc)).days) }} days ago
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group-vertical">
+                                            <div class="copy-btn-container mb-1">
+                                                <button class="btn btn-info copy-btn" style="width: 120px;" data-key="{{ key.api_key }}">
+                                                    <i class="fas fa-copy"></i> Copy
+                                                </button>
+                                                <span class="copy-notification d-none">Copied!</span>
+                                            </div>
+                                            {% if key.status == 'expired' %}
+                                                <a href="{{ url_for('renew_key', key_id=key.id) }}" class="btn btn-primary" style="width: 120px;">
+                                                    <i class="fas fa-sync"></i> Renew
+                                                </a>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Copy API key to clipboard with local notification
+    document.querySelectorAll('.copy-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const apiKey = this.getAttribute('data-key');
+            
+            navigator.clipboard.writeText(apiKey)
+                .then(() => {
+                    const notification = this.parentElement.querySelector('.copy-notification');
+                    notification.classList.remove('d-none');
+                    setTimeout(() => {
+                        notification.classList.add('d-none');
+                    }, 2000);
+                })
+                .catch(err => {
+                    console.error('Failed to copy to clipboard:', err);
+                    toastr.error('Failed to copy API key');
+                });
+        });
+    });
+
+    // Add smooth scrolling for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            document.querySelector(this.getAttribute('href')).scrollIntoView({
+                behavior: 'smooth'
+            });
+        });
+    });
+</script>
+{% endblock %}
