@@ -11,6 +11,8 @@ import os
 from dotenv import load_dotenv
 import secrets
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_wtf.csrf import CSRFProtect
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Initialize app and load environment variables
 load_dotenv()
@@ -20,6 +22,10 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql+ps
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['GOOGLE_OAUTH2_CLIENT_ID'] = os.getenv('GOOGLE_CLIENT_ID')
 app.config['GOOGLE_OAUTH2_CLIENT_SECRET'] = os.getenv('GOOGLE_CLIENT_SECRET')
+
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
+app.wsgi_app = ProxyFix(app.wsgi_app)
 
 # Configure allowed redirect URIs
 REDIRECT_URIS = [
@@ -80,8 +86,18 @@ class APIKey(Base):
     creation_date = Column(DateTime, nullable=False, default=datetime.utcnow)
     expiry_date = Column(DateTime, nullable=False)
     status = Column(String(20), default='active')
+    credits = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def use_credit(self, db_session):
+        """Use one credit from this API key."""
+        if self.credits <= 0:
+            raise ValueError("Not enough credits available")
+            
+        self.credits -= 1
+        db_session.commit()
+        return self.credits
 
 # Initialize OAuth
 oauth = OAuth(app)
@@ -143,7 +159,8 @@ def success():
             key_name=key_name,
             api_key=api_key,
             expiry_date=datetime.utcnow() + timedelta(days=30),
-            user_id=current_user.id
+            user_id=current_user.id,
+            credits=int(os.getenv('API_KEY_CREDITS', 5000))
         )
         db_session.add(new_key)
         db_session.commit()
@@ -310,12 +327,13 @@ def create_api_key():
         # Generate a unique API key
         api_key = secrets.token_hex(16)
         
-        # Create new API key record with automatic expiry date
+        # Create new API key record with automatic expiry date and credits
         new_key = APIKey(
             key_name=key_name,
             api_key=api_key,
             user_id=current_user.id,
-            expiry_date=datetime.utcnow() + timedelta(days=30)
+            expiry_date=datetime.utcnow() + timedelta(days=30),
+            credits=int(os.getenv('API_KEY_CREDITS', 5000))
         )
         db_session.add(new_key)
         db_session.commit()
@@ -374,6 +392,25 @@ def generate_key():
     return render_template('generate_key.html', key_name=key_name)
 
 
+@app.route('/use-credit/<int:key_id>', methods=['POST'])
+@login_required
+def use_credit(key_id):
+    try:
+        api_key = db_session.query(APIKey).get(key_id)
+        if not api_key:
+            return jsonify({'success': False, 'error': 'API key not found'}), 404
+            
+        if api_key.user_id != current_user.id:
+            return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
+            
+        credits = api_key.use_credit(db_session)
+        return jsonify({'success': True, 'credits': credits})
+        
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/renew/<int:key_id>')
 @login_required
 def renew_key(key_id):
@@ -427,10 +464,13 @@ def renew_success():
         flash('Unauthorized access', 'error')
         return redirect(url_for('dashboard'))
         
-    # Update the key's expiry date
+    # Update the key's expiry date and reset credits
     api_key.expiry_date = datetime.utcnow() + timedelta(days=30)
     api_key.status = 'active'
+    api_key.credits = int(os.getenv('API_KEY_CREDITS', 5000))
     db_session.commit()
+    
+
     
     flash('API key renewed successfully!', 'success')
     return redirect(url_for('dashboard'))

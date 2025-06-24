@@ -12,3 +12,4 @@ Flask-WTF==1.2.1
 Werkzeug==2.3.7
 python-jose[cryptography]==3.3.0
 passlib==1.7.4
+Flask-WTF==1.2.1

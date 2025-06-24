@@ -12,6 +12,7 @@
             <div class="card mb-4">
                 <div class="card-body">
                     <form action="{{ url_for('dashboard') }}" method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <div class="row">
                             <div class="col-md-8">
                                 <div class="mb-3">
@@ -48,6 +49,8 @@
                                     <th>Status</th>
                                     <th>Created</th>
                                     <th>Expires</th>
+                                    <th>Credits</th>
+                                    <th>Use Credit</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -79,6 +82,17 @@
                                                 <i class="fas fa-clock"></i> Expired {{ ((datetime.now(timezone.utc) - key.expiry_date).days if key.expiry_date.tzinfo else (datetime.now(timezone.utc) - key.expiry_date.replace(tzinfo=timezone.utc)).days) }} days ago
                                             </span>
                                         {% endif %}
+                                    </td>
+                                    <td>{{ key.credits }}</td>
+                                    <td>
+                                        <div class="use-credit-btn-container mb-1">
+                                            <form action="{{ url_for('use_credit', key_id=key.id) }}" method="POST" class="use-credit-form">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <button type="submit" class="btn btn-success" style="width: 120px;">
+                                                    <i class="fas fa-check"></i> Use Credit
+                                                </button>
+                                            </form>
+                                        </div>
                                     </td>
                                     <td>
                                         <div class="btn-group-vertical">
@@ -124,6 +138,47 @@
                     console.error('Failed to copy to clipboard:', err);
                     toastr.error('Failed to copy API key');
                 });
+        });
+    });
+
+    // Handle use credit form submission
+    document.querySelectorAll('.use-credit-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const form = this;
+            const button = form.querySelector('button[type="submit"]');
+            const creditsCell = form.closest('tr').querySelector('td:nth-child(5)'); // Credits cell is now 5th column
+
+            // Disable button during submission
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Using...';
+
+            fetch(form.action, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams(new FormData(form))
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update credits display
+                    creditsCell.textContent = data.credits;
+                    toastr.success('Credit used successfully');
+                } else {
+                    toastr.error(data.error || 'Failed to use credit');
+                }
+            })
+            .catch(error => {
+                toastr.error('Failed to use credit');
+                console.error('Error:', error);
+            })
+            .finally(() => {
+                // Re-enable button and reset text
+                button.disabled = false;
+                button.innerHTML = '<i class="fas fa-check"></i> Use Credit';
+            });
         });
     });
 
